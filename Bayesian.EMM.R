@@ -1,12 +1,25 @@
 #函數
 BEMM <- function(rankings, initial.method="mean", it.max=20){
   
+  ###input:
+  #ranking: a matrix, element at row i and col j stands for entity i's rank in ranker j
+  #initial.method:initial value of true rank(tau) for mcmc iterations
+  #it.max:number of mcmc iterations
+  ###output: 
+  #phi_sample:mcmc samples of phi
+  #pi0_sample:mcmc samples of true ranker
+  #alpha_sample:mcmc samples of alpha
+  #omega_sample:mcmc samples of omega
+  
   
   #######################################
   #
-  #step 1. input the data
+  #step 1. Check the data
   #
   #######################################
+  
+  num.ranker = ncol(rankings)
+  num.item   = nrow(rankings)
   
   
   
@@ -17,20 +30,18 @@ BEMM <- function(rankings, initial.method="mean", it.max=20){
   #
   #######################################
   
-  num.ranker = ncol(rankings)
-  num.item   = nrow(rankings)
   
   
   #2.1 initialize pi0
   
   score=rep(0,num.item)
-  if(initial.method=="mean"){score=apply(rankings, 1, mean)}
-  if(initial.method=="median"){
-    for(i in 1:num.item){score[i]=quantile(rankings[i,],0.5)}
-  }        
-  if(initial.method=="geometric"){
-    for(i in 1:num.item){score[i]=(prod(rankings[i,]))^(1/num.ranker)}
-  }   
+  
+  mean.na <- function(x){
+    return(mean(x, na.rm = T))
+  }
+  
+  if(initial.method=="mean"){score=apply(rankings, 1, mean.na)}
+    
   if(initial.method=="random"){
     score=sample(1:num.item,num.item,replace=F)
   } 
@@ -40,9 +51,9 @@ BEMM <- function(rankings, initial.method="mean", it.max=20){
   
   #2.2 initialize phi, alpha, omega and phi.h1, tau
   
-  op.phi=0.4
-  op.alpha=rep(0.4,num.ranker)
-  op.omega=rep(0.4,num.ranker)
+  op.phi=0.5
+  op.alpha=rep(0.5,num.ranker)
+  op.omega=rep(0.5,num.ranker)
   
   ########################################################################
   # 
@@ -74,9 +85,16 @@ BEMM <- function(rankings, initial.method="mean", it.max=20){
       #沒有超出的話才開始計算概似函數
       prob = 1
       
+      rank.length = c()
+      for(k in 1:ncol(data)){
+        rank.length <- c(rank.length, length(data[,k])-sum(is.na(data[,k])))
+      }
+      
       for(k in 1:ncol(data)){
         tau0_try = tau0
-        for(i in 1:nrow(data)){
+        #i in 1:nrow(data)
+        
+        for(i in 1:rank.length[k]){
           index = which(data[,k]==i)
           v = tau0_try[index]
           phi_i = phi*(1-alpha[k]^i)
@@ -182,15 +200,18 @@ BEMM <- function(rankings, initial.method="mean", it.max=20){
 #測試資料集
 set.seed(2024)
 rankings = t(rmm(n=20 , 1:10, theta=1, dist.name = "kendall"))
-rankings = rEMM(n=6, tau0=1:30, phi=0.1, alpha=rep(0.5,6), omega=rep(0.8,6))
+rankings = rEMM(n=5, tau0=1:5, phi=0.1, alpha=rep(0.5,5), omega=rep(0.8,5))
 
 #測試
 set.seed(2024)
-out = BEMM(rankings=rankings, initial.method="random", it.max=6000)
+library(PAMA)
+NBAFL = cbind(NBANFL()$NBAPL,NBANFL()$NBA)
+out = BEMM(rankings=NBAFL, initial.method="mean", it.max=6000)
 
 #samples of phi
-plot(1:6000, out$phi_sample, type = 'l',ylim = c(0,1),xlab = 'iteration',ylab = 'phi')
-hist(out$phi_sample[3001:6000],xlim = c(0,1),main = 'phi',xlab = 'MCMC samples of phi',breaks = 20)
+plot(1:6000, out$phi_sample, type = 'l',ylim = c(0,1),xlab = 'iteration',ylab = '',main = 'phi')
+
+hist(out$phi_sample[3001:6000],xlim = c(0,1),main = '',xlab = 'MCMC samples of phi',breaks = 20)
 (phi.estimate = mean(out$phi_sample[3001:6000]))
 abline(v=phi.estimate,col='red')
 abline(v=0.1,col='blue')
@@ -198,29 +219,99 @@ legend(0.7, 350, legend = c("true phi", "phi estimate"),
        col = c("blue", "red"), lty = 1:1)
 
 #alpha1
-plot(1:6000, out$alpha_sample[1,], type = 'l',ylim = c(0,1),xlab = 'alpha1',ylab = 'iteration')
-hist(out$alpha_sample[1,3001:6000])
-(mean(out$alpha_sample[1,3001:6000]))
+bayes.alpha= apply(out$alpha_sample[,3001:6000],1,mean)
+alpha.name = c()
+
+par(mfrow=c(2,5))
+for(k in 1:nrow(out$alpha_sample)){
+  #plot(1:6000, out$alpha_sample[k,], type = 'l',ylim = c(0,1),xlab ='iteration',ylab='',main = paste('alpha',k))
+  hist(out$alpha_sample[k,3001:6000],main='',xlab = paste('MCMC samples of alpha',k))
+  abline(v = bayes.alpha[k],col='red')
+  #alpha.name = c(alpha.name ,paste('alpha',k))
+}
+
+out.alpha.new=matrix(bayes.alpha,nrow=1)
+colnames(out.alpha.new) = alpha.name
+rownames(out.alpha.new) = c('Posterior mean')
+
+out.alpha = c()
+alpha.name = c()
+lev = c()
+for(i in 1:nrow(out$alpha_sample)){
+  out.alpha = c(out.alpha, out$alpha_sample[i,3001:6000] )
+  alpha.name = c(alpha.name, rep(paste('alpha',as.character(i)),3000))
+  lev = c(lev ,paste('alpha',as.character(i)))
+}
+out.alpha.new = data.frame(
+  alpha = out.alpha,
+  group = alpha.name
+)
+out.alpha.new$group = factor(out.alpha.new$group , levels=lev )
+boxplot(alpha ~ group, data = out.alpha.new,ylab='')
 
 #omega
-plot(1:6000, out$omega_sample[1,], type = 'l',ylim = c(0,1),xlab = 'omega1',ylab = 'iteration')
-hist(out$omega_sample[1,3001:6000])
-(mean(out$omega_sample[1,3001:6000]))
+bayes.omega = apply(out$omega_sample[,3001:6000],1,mean)
+omega.name = c()
+
+par(mfrow=c(2,5))
+for(k in 1:nrow(out$omega_sample)){
+  plot(1:6000, out$omega_sample[k,], type = 'l',ylim = c(0,1),xlab = 'iteration',main=paste('omega',k),ylab = '')
+  #hist(out$omega_sample[k,3001:6000],main='',xlab = paste('MCMC samples of omega',k))
+  #abline(v = bayes.omega[k],col='red')
+  #omega.name = c(omega.name ,paste('omega',k))
+}
+
+out.omega.new=matrix(bayes.omega,nrow=1)
+colnames(out.omega.new) = omega.name
+rownames(out.omega.new) = c('Posterior mean')
+
+plot(1:6000, out$omega_sample[10,], type = 'l',ylim = c(0,1),xlab = 'omega1',ylab = 'iteration')
+hist(out$omega_sample[10,3001:6000])
+(mean(out$omega_sample[10,3001:6000]))
+
+out.omega = c()
+omega.name = c()
+lev = c()
+for(i in 1:nrow(out$omega_sample)){
+  out.omega = c(out.omega, out$omega_sample[i,3001:6000] )
+  omega.name = c(omega.name, rep(paste('omega',as.character(i)),3000))
+  lev = c(lev ,paste('omega',as.character(i)))
+}
+out.omega.new = data.frame(
+  omega = out.omega,
+  group = omega.name
+)
+out.omega.new$group = factor(out.omega.new$group , levels=lev )
+boxplot(omega ~ group, data = out.omega.new)
 
 #samples of ranker(pi0)
-library(tidyverse)
 pi0 = out$pi0_sample[,3001:6000]
 (agg.ranker = rank(apply(pi0,1,mean)))  #aggregated ranker
 
-pi0.new.rank=pi0.new.name = c() #繪圖
+pi0.new.rank=pi0.new.name =lev= c() #繪圖
+
+Name = c('Heat','Thunder','Spurs','Celties','Clippers',
+         'Lakers','Pacers','76ers','Mavericks','Bulls',
+         'Knicks','Grizzlies','Nuggets','Magic','Hawks',
+         'Jazz','TrailBlazers','Rockets','Bucks','Suns',
+         'Nets','Warriors','Timberwolves','Hornets','Pistons',
+         'Kings','Wizards','Raptors','Cavaliers','Bobcats')
+
 for(i in 1:nrow(pi0)){
   pi0.new.rank = c(pi0.new.rank , pi0[i,])
-  pi0.new.name = c(pi0.new.name , rep(paste(as.character(i)), ncol(pi0)))
+  pi0.new.name = c(pi0.new.name , rep(Name[i], ncol(pi0)))
+  lev = c(lev,as.character(i))
 }
 pi0.new = data.frame(
   rank = pi0.new.rank,
   entity = pi0.new.name
 )
-ggplot(data=pi0.new)+geom_boxplot(aes(x=entity,y=rank))
+pi0.new$entity = factor(pi0.new$entity , levels=Name )
+ggplot(data = pi0.new)+
+  geom_boxplot(aes(x=entity,y=rank))+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
 
+boxplot(rank ~ entity, data = pi0.new)
 
+agg.team = rbind(Name,agg.ranker)
+rownames(agg.team) = c('NBA Team','aggregated rank')
