@@ -1,4 +1,4 @@
-#These codes are refer to R package "ExtMallows" (Han Li et al.),for more details, please cheak out 'https://cran.r-project.org/web/packages/ExtMallows/index.html'
+#These codes are refer to R package "ExtMallows" (Han Li et al.).for more details, please cheak out 'https://cran.r-project.org/web/packages/ExtMallows/index.html'
 BEMM <- function(rankings, initial.method="mean", it.max=20){
   
   ###input:
